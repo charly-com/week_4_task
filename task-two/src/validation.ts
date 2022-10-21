@@ -1,5 +1,5 @@
 import fs from 'fs';
-import got from 'got';
+import dns from 'dns';
 /**
  * Stretch goal - Validate all the emails in this files and output the report
  *
@@ -10,21 +10,16 @@ async function validateEmailAddresses(inputPath: string[], outputFile: string) {
   let emailString = '';
   let emailArray: string[] = [];
   const validEmails: string[] = [];
-  const validDomainArray: string[] = [];
-  let emailsWithValidDomains = '';
 
   for (let i = 0; i < inputPath.length; i++) {
-    try {
-      const data = fs.createReadStream(inputPath[i]);
+    const data = fs.createReadStream(inputPath[i]);
 
-      for await (const chunk of data) {
-        emailString += chunk;
-      }
-      emailString = emailString.toString();
-      emailArray = emailString.split('\n');
-    } catch (error) {
-      console.log(error);
+    for await (const chunk of data) {
+      emailString += chunk;
     }
+    emailString = emailString.toString();
+    emailArray = emailString.split('\n');
+
     const regx = new RegExp(
       /^([a-zA-Z0-9_.+-])+@(([a-zA-Z0-9-])+\.)+([a-zA-Z0-9]{2,4})+$/,
     );
@@ -33,31 +28,18 @@ async function validateEmailAddresses(inputPath: string[], outputFile: string) {
         validEmails.push(item);
       }
     }
+  }
+  const output = fs.createWriteStream(outputFile);
+  output.write('Email' + '\n');
+  for (const elem of validEmails) {
+    const domains = elem.split('@')[1];
 
-    for (const item of validEmails) {
-      const domain = item.split('@')[1];
-
-      const url = `https://dns.google.com/resolve?name=${domain}&type=MX`;
-      const response = await got(url);
-      const result = JSON.parse(response.body);
-      if (result.Answer && !validDomainArray.includes(domain)) {
-        validDomainArray.push(domain);
-        const realEmail = `${item}\n`;
-        // console.log(realEmail);
-        emailsWithValidDomains += realEmail;
+    dns.resolve(domains, 'MX', function (err, addresses) {
+      if (err) {
+        console.log(elem);
+      } else if (addresses && addresses.length > 0) {
+        output.write(elem + '\n');
       }
-    }
-
-    // console.log(emailsWithValidDomains);
-    const writerStream = fs.createWriteStream(outputFile);
-    writerStream.write(emailsWithValidDomains, 'utf8');
-    writerStream.end;
-    writerStream.on('finish', function () {
-      console.log('Write completed.');
-    });
-
-    writerStream.on('error', function (err) {
-      console.log(err.message);
     });
   }
 }
